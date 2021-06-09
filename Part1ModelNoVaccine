@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 12 10:37:45 2021
+
+@author: meg
+"""
+import matplotlib.pyplot as plt
+import numpy as np
+from metromin import metromin
+from Contact17x17 import Contactclass17
+from scipy.stats import gamma
+import scipy as scipy
+
+class MY_COVID(metromin,Contactclass17) :
+    def __init__(self,Tmax, R,nP,Vorder):
+        self.TotPop = np.dot(55.98/66.65,[3451560,3556732,3823503,3957013,3903430,3752013,4166962,4692543,4651991,3986480,3612537,3900381,3125098,2704065-20900,2337939-20900,4587765-376200,418000])
+        self.Tmax = Tmax
+        self.asize=Tmax+1
+        self.Rpar = R
+        self.Ac=0.4
+        self.avred=0.3007
+        self.Cf= np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.5975]) #Non hospital fatalties constant
+        self.Hc = np.array([0.0,0.0026,0.00084,0.00042,0.0008,0.0026,0.0040,0.0063,0.012,0.019,0.023,0.040,0.096,0.10,0.24,0.50,0.2]) #Infection to Hospitalisation ratio
+        self.Kf = np.array([0.00031,0.00003,0.00001,0.000001,0.00001,0.00004,0.00006,0.00013,0.00031,0.0007,0.00116,0.00276,0.00867,0.01215,0.03512,0.09063,0.60*0.2]) #Infection to fatality ratio
+        self.Hf=self.Kf/self.Hc  #Hospitalisation to fatality ratio
+        self.Hf[0]=0
+        self.nP=nP
+        self.nPad = nP+1
+        self.Vorder=Vorder
+        self.lnP=249
+        self.lnPad=250
+
+        self.contact=Contactclass17.contactmatrix() #importing Contact Matrix
+
+        #Initialising compartments of model 
+        self.S=np.zeros((17,self.asize))
+        self.I=np.zeros((17,self.asize))
+        self.A=np.zeros((17,self.asize))
+        self.H=np.zeros((17,self.asize)) 
+        self.R=np.zeros((17,self.asize))
+        self.F=np.zeros((17,self.asize))
+
+        #Arrays for delta I, delta A, delta H, etc, denoting daily changes between compartments
+        self.Dh=np.zeros((17,self.asize+self.nPad)) #new daily severe infections
+        self.Di=np.zeros((17,self.asize+self.nPad)) #new daily mild infections
+        self.Da=np.zeros((17,self.asize+self.nPad)) #new daily asymptomatic infections
+        
+        self.DRh=np.zeros((17,self.asize))   #new daily severe infection recoveries
+        self.DRa=np.zeros((17,self.asize))    #new daily asymptomatic infection recoveries
+        self.Dr=np.zeros((17,self.asize))   #new daily mild infection recoveries
+       
+        self.Df=np.zeros((17,self.asize))  #new daily fatalities (from all sources)
+        
+        self.t=np.linspace(0,self.Tmax,num=self.Tmax+1)
+        
+        #Probability distributions
+        
+        #Serial time interval distribution
+        self.lPinf=self.mk_gammalong(self.t,6.5,0.62)
+        
+        #Incubation period distribution
+        self.lPinc=self.mk_gammalong(self.t,5.1,0.86) 
+        
+        
+        #Symptom onset to recovery/death of severe cases distribution
+        self.lPrinc=self.mk_gammalong(self.t,17.8,0.45) 
+        
+        #Symptom onset to recover of mild cases distribution
+        self.mildsymprecover=self.mk_gammalong(self.t,12.47,1.49)
+        
+        #Symptom onset to hospitalisation distribtion
+        self.symphosp=self.log_normallong(self.t,0.845,5.506)
+        
+        #Infection to hospitalisation distribution
+        self.exphosp=self.evalexphosp()
+        
+        #Distribution of duration from infection to recovery of mild and asymptomatic cases
+        self.mildfull=self.evalmildfull()
+        
+        #Distribution of duration from infection to recovery/death of severe cases
+        self.fullhosp=self.evalfullhosp()
+        
+        #Maximum potential infectivity distribution
+        self.truPinf=self.truePinf()
+        
+        #Infectivity distribution of mild cases
+        self.mildcase=self.evalisoPinf(0,0) #no self isolation
+        self.averPinf=self.evalisoPinf(1,0.666667) #'pre-pandemic' levels of self isolation
+        self.PinfIso=self.evalisoPinf(1,0.95) #'pandemic' levels of self isolation
+        
+        #Infectivity distribution of severe cases
+        self.HPinf=self.evalHPinfIso(0,0) #no self isolation
+        self.averHPinf=self.evalHPinfIso(1,0.6667) #'pre-pandemic' levels of self isolation
+        self.HPinfIso=self.evalHPinfIso(1,0.95)  #'pandemic' levels of self isolation
+        
+        #Infectivity distribution of asymptomatic cases
+        self.AsPinf=self.asympPinf(0,0)
+
+        #Reducing arrays to 50 day discrete arrays
+        self.lPinf=self.shorten(self.lPinf)
+        self.averPinf=self.shorten(self.averPinf)
+        self.truPinf=self.shorten(self.truPinf)
+        self.lPinc=self.shorten(self.lPinc)
+        self.lPrinc=self.shorten(self.lPrinc)
+        self.mildfull=self.shorten(self.mildfull)
+        self.fullhosp=self.shorten(self.fullhosp)
+        self.HPinf=self.shorten(self.HPinf)
+        self.HPinfIso=self.shorten(self.HPinfIso)
+        self.averHPinf=self.shorten(self.averHPinf)
+        self.presymp1=self.shorten(self.presymp1)
+        self.PinfIso=self.shorten(self.PinfIso)
+        self.AsPinf=self.shorten(self.AsPinf)
+        self.mildcase=self.shorten(self.mildcase)
+        self.asymprec=self.shorten(self.asymprec)
+        
+        #Initial conditions for model
+        #Initialising asymptomatic cases in [20-25] age group in before model start
+        for i in range(0,self.nPad):
+            self.Da[5][self.nPad-i]=0.4
+        cumulativemild=1-np.cumsum(self.mildfull)
+        for i in range(0,17):
+            self.A[i][0]=np.sum(self.Da[i][0:self.nPad]*cumulativemild[::-1])
+        for i in range(0,17):
+            self.S[i][0]=self.TotPop[i]-self.A[i][0]
+
+    def mk_gammalong(self,t, mu, var_coef):
+        """ Create and return a varience distribution
+            : param t : range of values
+            : param mu : average
+            : param var_coef : coefficient of variation (=sigma/mu)
+        """
+        lambda_p = np.sqrt(1/(mu*var_coef**2)) # lambda=alpha/mu=1/(mu V^2)
+        alpha_p = mu*lambda_p
+        x=np.linspace(0,50,self.lnPad)
+        Pi = gamma.pdf(x, alpha_p, 0, 1/lambda_p)
+        Pi=Pi/sum(Pi)
+        return(Pi)
+    
+    def log_normallong(self,t, mu, n):
+        """ Create and return a varience distribution
+            : param t : range of values
+            : param mu : scale parameter
+            : param n : shape parameter
+        """
+        x=np.linspace(0,50,self.lnPad+2)
+        Pi = (scipy.stats.weibull_min.pdf(x,mu,0,n))
+        Pi=Pi[1:self.lnPad+1]
+        Pi = Pi/sum(Pi) # normalise
+        return(Pi)
+       
+        
+    def evalPrd(self):
+        Pr=np.zeros(self.lnPad)
+        for d in range(len(Pr)):
+            for n in range(0,self.lnP):
+                Pr[d] += self.lPinc[n]*self.lPrinc[d-n]
+        Pr = Pr/sum(Pr)     # normalise the probability    
+        return Pr
+    
+    def evalPhd(self):
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinc[n]*self.Phrinc[d-n]
+        Phrd = Phrd/sum(Phrd)     # normalise the probability    
+        return Phrd  
+        
+    def evalmildfull(self):
+        Pr=np.zeros(self.lnPad)
+        for d in range(len(Pr)):
+            for n in range(0,self.lnP):
+                Pr[d] += self.lPinc[n]*self.mildsymprecover[d-n]
+        Pr = Pr/sum(Pr) # normalise the probability    
+        return Pr
+    
+    def evalasympfull(self):
+        Pr=np.zeros(self.lnPad)
+        for d in range(len(Pr)):
+            for n in range(0,self.lnP):
+                Pr[d] += self.lPinc[n]*self.truPinf[d-n]
+        Pr = Pr/sum(Pr) # normalise the probability    
+        return Pr
+     
+    def evalHPinf(self): #No isolation Hpinf
+        cumn=1-np.cumsum(np.roll(self.exphosp,0))
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.truPinf[d]*cumn[d]
+        Phrd = Phrd/self.lnP
+        return Phrd
+    
+    def evalHPinfIso(self,d,p): #variable isolation Hpinf
+        cumn=1-np.cumsum(np.roll(self.lPinc,d*5)*p)
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.HPinf[d]*cumn[d]
+        Phrd = Phrd/self.lnP
+        return Phrd
+
+    def truePinf(self): #maximum potential infectvity
+        cumn=1-np.cumsum(np.roll(self.lPinc,5)*(6/7))
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinf[d]/cumn[d]
+        Phrd = Phrd/(sum(Phrd))
+        return Phrd
+
+    def asympPinf(self,d,p): 
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.truPinf[d]*0.3007
+        Phrd = Phrd/self.lnP
+        return Phrd
+    
+    def evalisoPinf(self,d,p): 
+        cumn=1-np.cumsum(np.roll(self.lPinc,5*d)*p)
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.truPinf[d]*cumn[d]
+        Phrd = Phrd/self.lnP
+        return Phrd
+    
+    def evalexphosp(self): 
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinc[n]*self.symphosp[d-n]
+        Phrd = Phrd/sum(Phrd)   
+        return Phrd
+    
+    def evalfullhosp(self): 
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinc[n]*self.lPrinc[d-n]
+        Phrd = Phrd/sum(Phrd) 
+        return Phrd
+        
+    def shorten(self,func):
+        func=5*np.mean(func.reshape(-1,5),axis=1)
+        func=np.insert(func,-1,0)
+        return func
+   
+    def my_covid(self):
+        SumDi=np.zeros(shape=(17,))
+        SumRi=np.zeros(shape=(17,))
+        SumRh=np.zeros(shape=(17,))
+        SumRa=np.zeros(shape=(17,))
+        SumDiA=np.zeros(shape=(17,))
+        SumDiH=np.zeros(shape=(17,))
+        for d in range(self.Tmax): 
+            totalinfect=np.zeros(shape=(17,))
+            for i in range(0,17):   
+                for j in range(0,17):
+                    if d<=33: #Pre-pandemic period
+                        totalinfect[i]+=(self.contact[i][j])*(sum(self.averPinf*self.Di[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.averHPinf*self.Dh[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.Da[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                    elif d>33 and d<=47:  #Pandemic period
+                        totalinfect[i]+=(self.contact[i][j])*(sum(self.PinfIso*self.Di[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.Dh[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.Da[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+            
+                SumDi[i]= (1-self.Hc[i]-self.Ac)*totalinfect[i]
+                SumDiA[i]= self.Ac*totalinfect[i]
+                SumDiH[i]= self.Hc[i]*totalinfect[i]
+                
+                SumRi[i] =sum(self.mildfull*self.Di[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRh[i]=sum(self.fullhosp*self.Dh[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRa[i]=sum(self.mildfull*self.Da[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+               
+                #New daily infections 
+                self.Di[i][self.nPad+d]=self.Rpar[d]*self.S[i][d]*(SumDi[i])
+                self.Dh[i][self.nPad+d]=self.Rpar[d]*self.S[i][d]*(SumDiH[i])
+                self.Da[i][self.nPad+d]=self.Rpar[d]*self.S[i][d]*(SumDiA[i])
+
+                #New daily fatalities
+                self.Df[i][d]=self.Hf[i]*SumRh[i]+self.Cf[i]*SumRi[i]
+                
+                #New daily recoveries
+                self.Dr[i][d]=SumRi[i]*(1-self.Cf[i])
+                self.DRh[i][d]=(1-self.Hf[i])*SumRh[i]
+                self.DRa[i][d]=SumRa[i]
+                
+                #Compartments of model
+                self.S[i][d+1]=self.S[i][d]-self.Di[i][self.nPad+d]-self.Dh[i][self.nPad+d]
+                self.I[i][d+1]=self.Di[i][self.nPad+d]-self.Dr[i][d]+self.I[i][d]
+                self.R[i][d+1]=self.R[i][d]+self.Dr[i][d]+self.DRh[i][d]
+                self.F[i][d+1]=self.F[i][d]+self.Df[i][d]
+                self.H[i][d+1]=self.H[i][d]-self.Df[i][d]+self.Dh[i][self.nPad+d]-self.DRh[i][d]+self.Cf[i]*SumRi[i]
+                self.A[i][d+1]=self.A[i][d]+self.Da[i][self.nPad+d]-self.DRa[i][d]
+
+

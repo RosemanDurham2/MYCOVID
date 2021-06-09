@@ -1,0 +1,540 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Jan 12 10:37:45 2021
+
+@author: meg
+"""
+import sys
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+from metromin import metromin
+from Contact17x17 import Contactclass17
+from Contact17x17Q import Contactclass17Q
+import datetime
+from scipy.stats import gamma
+import scipy as scipy
+import pandas as pd
+import matplotlib.dates as dates
+from immunit import MY_COVIDim
+
+
+class MY_COVID(metromin,Contactclass17) :
+    def __init__(self,Tmax,d,R,nP,Vdelay,Vorder,Vrate,Vrate2,Vgap,Vprop1,Vprop2):
+        self.TotPop = np.dot(55.98e6/66.27,[3.86,4.15,3.95,3.66,4.15,4.51,4,4.4,4.02,4.4,4.66,4.41,3.76,3.37,3.32,5.7-0.376200,0.418000])
+        self.I0 = I0
+        self.Tmax = Tmax
+        self.asize=Tmax+1
+        self.d= d
+        self.Rpar = R
+        self.Ac=0.4
+        self.avred=0.3007
+        self.Cf= np.array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.5975])
+        self.Hf = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        self.Hc = np.array([0.0,0.0026,0.00084,0.00042,0.0008,0.0026,0.0040,0.0063,0.012,0.019,0.023,0.040,0.096,0.10,0.24,0.50,0.2])
+        self.Kf = np.array([0.00031,0.00003,0.00001,0.000001,0.00001,0.00004,0.00006,0.00013,0.00031,0.0007,0.00116,0.00276,0.00867,0.01215,0.03512,0.09063,0.60*0.2])
+        self.Hf=self.Kf/self.Hc
+        self.Hf[0]=0
+        self.nP=nP
+        self.nPad = nP+1
+        self.Vdelay=Vdelay
+        self.Vorder=Vorder
+        self.Vrateweek=0
+        self.storeVrate=np.zeros((17,self.asize))
+        self.storefVrate=np.zeros((17,self.asize))
+        self.storefVrate2=np.zeros((17,self.asize))
+        self.storeVrate2=np.zeros((17,self.asize))
+        self.Vrate=np.zeros((17,))
+        self.Vgap=Vgap
+        self.Vrateweek2=0
+        self.Vrate2=np.zeros((17,))
+        self.Vprop1=Vprop1
+        self.Vprop2=Vprop2
+        self.sigmai1=0.28
+        self.sigmah1=0.15
+        self.sigmaa1=0.43
+        self.sigmai2=0.10
+        self.sigmah2=0.06
+        self.sigmaa2=0.30
+        self.lnP=249
+        self.lnPad=250
+        self.uptake=np.array(np.full(shape=(17,),fill_value=0.9))
+        self.dose=Vgap
+
+        self.contact=Contactclass17.contactmatrix()
+
+        #Unvaccinated population model compartments
+        self.S=np.zeros((17,self.asize))
+        self.I=np.zeros((17,self.asize))
+        self.R=np.zeros((17,self.asize))
+        self.F=np.zeros((17,self.asize))
+        self.A=np.zeros((17,self.asize))
+        self.H=np.zeros((17,self.asize))
+        
+        #1st dose vaccinated population model compartments
+        self.SV1=np.zeros((17,self.asize))
+        self.IV1=np.zeros((17,self.asize))
+        self.RV1=np.zeros((17,self.asize))
+        self.FV1=np.zeros((17,self.asize))
+        self.AV1=np.zeros((17,self.asize))
+        self.HV1=np.zeros((17,self.asize))
+        
+        #2nd dose vaccinated population model compartments
+        self.SV2=np.zeros((17,self.asize))
+        self.IV2=np.zeros((17,self.asize))
+        self.RV2=np.zeros((17,self.asize))
+        self.FV2=np.zeros((17,self.asize))
+        self.AV2=np.zeros((17,self.asize))
+        self.HV2=np.zeros((17,self.asize))
+        
+        #Unvaccinated population, daily change in compartments
+        #Daily new recoveries
+        self.DRh=np.zeros((17,self.asize))
+        self.DRa=np.zeros((17,self.asize))
+        self.Dr=np.zeros((17,self.asize))
+        #Daily new infections
+        self.Di=np.zeros((17,self.asize+self.nPad))
+        self.Da=np.zeros((17,self.asize+self.nPad))
+        self.Dh=np.zeros((17,self.asize+self.nPad)) 
+        #Daily new fatalites
+        self.Df=np.zeros((17,self.asize))
+        
+        
+        #1st dose vaccinated population, daily change in compartments
+        #Daily new recoveries
+        self.DhV1=np.zeros((17,self.asize+self.nPad))
+        self.DRhV1=np.zeros((17,self.asize))
+        self.DRaV1=np.zeros((17,self.asize))
+        #Daily new infections
+        self.DiV1=np.zeros((17,self.asize+self.nPad))
+        self.DaV1=np.zeros((17,self.asize+self.nPad))
+        self.DrV1=np.zeros((17,self.asize))
+        #Daily new fatalites
+        self.DfV1=np.zeros((17,self.asize))
+        
+        
+        #2nd dose vaccinated population, daily change in compartments
+        #Daily new recoveries
+        self.DhV2=np.zeros((17,self.asize+self.nPad)) 
+        self.DRhV2=np.zeros((17,self.asize))
+        self.DRaV2=np.zeros((17,self.asize))
+        #Daily new infections
+        self.DiV2=np.zeros((17,self.asize+self.nPad))
+        self.DaV2=np.zeros((17,self.asize+self.nPad))
+        self.DrV2=np.zeros((17,self.asize))
+        #Daily new fatalites
+        self.DfV2=np.zeros((17,self.asize))
+        
+    
+        self.t=np.linspace(0,self.Tmax,num=self.Tmax+1)
+        
+        #Probability distributions
+        
+        #Serial time interval distribution
+        self.lPinf=self.mk_gammalong(self.t,6.5,0.62)
+        
+        #Incubation period distribution
+        self.lPinc=self.mk_gammalong(self.t,5.1,0.86) 
+        
+        
+        #Symptom onset to recovery/death of severe cases distribution
+        self.lPrinc=self.mk_gammalong(self.t,17.8,0.45) 
+        
+        #Symptom onset to recover of mild cases distribution
+        self.mildsymprecover=self.mk_gammalong(self.t,12.47,1.49)
+        
+        #Symptom onset to hospitalisation distribtion
+        self.symphosp=self.log_normallong(self.t,0.845,5.506)
+        
+        #Infection to hospitalisation distribution
+        self.exphosp=self.evalexphosp()
+        
+        #Distribution of duration from infection to recovery of mild and asymptomatic cases
+        self.mildfull=self.evalmildfull()
+        
+        #Distribution of duration from infection to recovery/death of severe cases
+        self.fullhosp=self.evalfullhosp()
+        
+        #Maximum potential infectivity distribution
+        self.truPinf=self.truePinf()
+        
+        #Infectivity distribution of mild cases
+        self.mildcase=self.evalisoPinf(0,0) #no self isolation
+        self.averPinf=self.evalisoPinf(1,0.666667) #'pre-pandemic' levels of self isolation
+        self.PinfIso=self.evalisoPinf(1,0.95) #'pandemic' levels of self isolation
+        
+        #Infectivity distribution of severe cases
+        self.HPinf=self.evalHPinfIso(0,0) #no self isolation
+        self.averHPinf=self.evalHPinfIso(1,0.6667) #'pre-pandemic' levels of self isolation
+        self.HPinfIso=self.evalHPinfIso(1,0.95)  #'pandemic' levels of self isolation
+        
+        #Infectivity distribution of asymptomatic cases
+        self.AsPinf=self.asympPinf(0,0)
+
+        #Reducing arrays to 50 day discrete arrays
+        self.lPinf=self.shorten(self.lPinf)
+        self.averPinf=self.shorten(self.averPinf)
+        self.truPinf=self.shorten(self.truPinf)
+        self.lPinc=self.shorten(self.lPinc)
+        self.lPrinc=self.shorten(self.lPrinc)
+        self.mildfull=self.shorten(self.mildfull)
+        self.fullhosp=self.shorten(self.fullhosp)
+        self.HPinf=self.shorten(self.HPinf)
+        self.HPinfIso=self.shorten(self.HPinfIso)
+        self.averHPinf=self.shorten(self.averHPinf)
+        self.presymp1=self.shorten(self.presymp1)
+        self.PinfIso=self.shorten(self.PinfIso)
+        self.AsPinf=self.shorten(self.AsPinf)
+        self.mildcase=self.shorten(self.mildcase)
+        self.asymprec=self.shorten(self.asymprec)
+        
+        #Model initialisation  
+        
+        #Populating arrays for 50 days previous to start
+        for i in range(0,self.nPad):
+            for j in range(0,16):
+                self.Da[j][self.nPad-i]=0.4*sum(self.contact[j])/sum(sum(self.contact))*(1/0.6)*(self.TotPop[j]/sum(self.TotPop))*(1/0.057721729012579985)*25000
+                self.Di[j][self.nPad-i]=(1-self.Hc[j]-0.4)*sum(self.contact[j])/sum(sum(self.contact))*(1/0.6)*(self.TotPop[j]/sum(self.TotPop))*(1/0.057721729012579985)*25000
+                self.Dh[j][self.nPad-i]=self.Hc[j]*sum(self.contact[j])/sum(sum(self.contact))*(1/0.6)*(self.TotPop[j]/sum(self.TotPop))*(1/0.057721729012579985)*25000
+
+        for i in range(0,self.nPad):
+            self.Da[16][self.nPad-i]=0.4*sum(self.contact[16])/sum(sum(self.contact))*(1/0.6)*(self.TotPop[16]/sum(self.TotPop))*(1/(0.057721729012579985))*25000
+            self.Di[16][self.nPad-i]=(1-self.Hc[16]-0.4)*sum(self.contact[16])/sum(sum(self.contact))*(1/0.6)*(self.TotPop[16]/sum(self.TotPop))*(1/(0.057721729012579985))*25000
+            self.Dh[16][self.nPad-i]=self.Hc[16]*sum(self.contact[16])/sum(sum(self.contact))*(1/0.6)*(self.TotPop[16]/sum(self.TotPop))*(1/(0.057721729012579985))*25000
+        
+        cumu=1-np.cumsum(self.mildfull)
+        cumu2=1-np.cumsum(self.fullhosp)
+        cumu3=1-np.cumsum(self.asymprec)
+ 
+        #Calculating number of current infections for model intialisation
+        for i in range(0,17):
+            self.A[i][0]=np.sum(self.Da[i][0:self.nPad]*cumu3[::-1])
+            self.I[i][0]=np.sum(self.Di[i][0:self.nPad]*cumu[::-1])
+            self.H[i][0]=np.sum(self.Dh[i][0:self.nPad]*cumu2[::-1])
+
+        for i in range(0,17):
+            self.R[i][0]=self.TotPop[i]*0.15
+            self.S[i][0]=self.TotPop[i]*(1-self.Vprop1[i]-self.Vprop2[i])-self.I[i][0]-self.H[i][0]-self.A[i][0]-self.R[i][0]
+            self.SV1[i][0]=self.TotPop[i]*self.Vprop1[i]+1e-9
+            self.SV2[i][0]=self.TotPop[i]*self.Vprop2[i]+1e-9
+
+
+    def mk_gammalong(self,t, mu, var_coef):
+        """ Create and return a varience distribution
+            : param t : range of values
+            : param mu : average
+            : param var_coef : coefficient of variation (=sigma/mu)
+        """
+        lambda_p = np.sqrt(1/(mu*var_coef**2)) # lambda=alpha/mu=1/(mu V^2)
+        alpha_p = mu*lambda_p
+        x=np.linspace(0,50,self.lnPad)
+        Pi = gamma.pdf(x, alpha_p, 0, 1/lambda_p)
+        Pi=Pi/sum(Pi)
+        return(Pi)
+    
+    
+    
+    def log_normallong(self,t, mu, var_coef):
+        """ Create and return a varience distribution
+            : param t : range of values
+            : param mu : average
+            : param var_coef : coefficient of variation (=sigma/mu)
+        """
+        x=np.linspace(0,50,self.lnPad+2)
+        Pi = (scipy.stats.weibull_min.pdf(x,mu,0,var_coef))
+        Pi=Pi[1:self.lnPad+1]
+       # plt.show()
+       # print(sum(Pi))
+        Pi = Pi/sum(Pi) # normalise
+        return(Pi)
+       
+        
+    def evalPrd(self):
+        Pr=np.zeros(self.lnPad)
+        for d in range(len(Pr)):
+            for n in range(0,self.lnP):
+                Pr[d] += self.lPinc[n]*self.lPrinc[d-n]
+        Pr = Pr/sum(Pr)     # normalise the probability    
+        return Pr
+    
+    def evalPhd(self):
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinc[n]*self.Phrinc[d-n]
+        Phrd = Phrd/sum(Phrd)     # normalise the probability    
+        return Phrd  
+        
+    def evalmildfull(self):
+        Pr=np.zeros(self.lnPad)
+        for d in range(len(Pr)):
+            for n in range(0,self.lnP):
+                Pr[d] += self.lPinc[n]*self.mildsymprecover[d-n]
+        Pr = Pr/sum(Pr) # normalise the probability    
+        return Pr
+    
+    def evalasympfull(self):
+        Pr=np.zeros(self.lnPad)
+        for d in range(len(Pr)):
+            for n in range(0,self.lnP):
+                Pr[d] += self.lPinc[n]*self.truPinf[d-n]
+        Pr = Pr/sum(Pr) # normalise the probability    
+        return Pr
+    
+    
+    def evalHPinf(self): #No isolation Hpinf
+        cumn=1-np.cumsum(np.roll(self.exphosp,0))
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.truPinf[d]*cumn[d]
+        Phrd = Phrd/self.lnP
+
+        return Phrd
+    
+    def evalHPinfIso(self,d,p): 
+        cumn=1-np.cumsum(np.roll(self.lPinc,d*5)*p)
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.HPinf[d]*cumn[d]
+        Phrd = Phrd/self.lnP
+        return Phrd
+    
+
+    def truePinf(self): 
+        cumn=1-np.cumsum(np.roll(self.lPinc,5)*(6/7))
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinf[d]/cumn[d]
+        Phrd = Phrd/(sum(Phrd))
+
+        return Phrd
+
+    def asympPinf(self,d,p):   
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.truPinf[d]*0.3007
+        Phrd = Phrd/self.lnP
+
+        return Phrd
+    
+    def evalisoPinf(self,d,p): 
+        cumn=1-np.cumsum(np.roll(self.lPinc,5*d)*p)
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.truPinf[d]*cumn[d]
+        Phrd = Phrd/self.lnP
+        return Phrd
+    
+    def evalexphosp(self):
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinc[n]*self.symphosp[d-n]
+        Phrd = Phrd/sum(Phrd)   
+        return Phrd
+    
+    def evalfullhosp(self): 
+        Phrd=np.zeros(self.lnPad)
+        for d in range(len(Phrd)):
+            for n in range(0,self.lnP):
+                Phrd[d] += self.lPinc[n]*self.lPrinc[d-n]
+        Phrd = Phrd/sum(Phrd)
+        return Phrd
+        
+    def shorten(self,func):
+        func=5*np.mean(func.reshape(-1,5),axis=1)
+        func=np.insert(func,-1,0)
+        return func
+   
+    def my_covid(self):
+        SumDi=np.zeros(shape=(17,))
+        SumRi=np.zeros(shape=(17,))
+        SumRh=np.zeros(shape=(17,))
+        SumRa=np.zeros(shape=(17,))
+        SumRiV1=np.zeros(shape=(17,))
+        SumRhV1=np.zeros(shape=(17,))
+        SumRaV1=np.zeros(shape=(17,))
+        SumRiV2=np.zeros(shape=(17,))
+        SumRhV2=np.zeros(shape=(17,))
+        SumRaV2=np.zeros(shape=(17,))
+        SumDiA=np.zeros(shape=(17,))
+        SumDiH=np.zeros(shape=(17,))
+        SumDiHV1=np.zeros(shape=(17,))
+        SumDiHV2=np.zeros(shape=(17,))
+        SumDiH=np.zeros(shape=(17,))
+        SumDiAV1=np.zeros(shape=(17,))
+        SumDiAV2=np.zeros(shape=(17,))
+        SumDiA=np.zeros(shape=(17,))
+        SumDiV1=np.zeros(shape=(17,))
+        SumDiV2=np.zeros(shape=(17,))
+        
+        count=0
+        count2=0
+     
+        self.Vrate=np.zeros(shape=(17,))
+        self.Vrate2=np.zeros(shape=(17,))        
+        for d in range(self.Tmax):       
+        
+            if d>=21 and d<self.dose:
+                #First doses
+                self.Vrate=np.zeros(shape=(17,))
+                #Number of raw first doses
+                self.Vrate[Vorder[count]]=2000000/7
+                self.storeVrate[:,d]=self.Vrate
+                #Number of 'effective' doses
+                self.Vrate=self.Vrate*((self.S[:,d-21]+self.SV1[:,d-21]+self.SV2[:,d-21])/(self.R[:,d-21]+self.S[:,d-21]+self.SV1[:,d-21]+self.SV2[:,d-21]))         
+                self.storefVrate[:,d]=self.Vrate
+             
+            if d>=self.dose:
+                #First doses
+                self.Vrate=np.zeros(shape=(17,))
+                #Number of raw first doses
+                self.Vrate[Vorder[count]]=1000000/7
+                self.storeVrate[:,d]=self.Vrate
+                #Number of ;effective' doses
+                self.Vrate=self.Vrate*((self.S[:,d-21]+self.SV1[:,d-21]+self.SV2[:,d-21])/(self.R[:,d-21]+self.S[:,d-21]+self.SV1[:,d-21]+self.SV2[:,d-21]))
+                self.storefVrate[:,d]=self.Vrate
+                
+                #Second doses
+                self.Vrate2=np.zeros(shape=(17,))
+                #Number of raw second doses
+                self.Vrate2[Vorder[count2]]=1000000/7
+                #Number of 'effective' doses
+                self.Vrate2=self.Vrate2*((sum(np.sum(self.storefVrate,axis=0)[0:d-21])/sum(np.sum(self.storeVrate,axis=0)[0:d-21])))
+                self.storefVrate2[:,d]=self.Vrate2
+              
+            totalinfect=np.zeros(shape=(17,))
+            suminfect=np.zeros(shape=(17,))
+            suminfectV1=np.zeros(shape=(17,))
+            suminfectV2=np.zeros(shape=(17,))
+            for i in range(16,-1,-1):   
+                for j in range(0,17):
+                    if d>0 and d<=0:
+                        suminfect[i]+=(self.contact[i][j])*(sum(self.PinfIso*self.Di[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.Dh[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.Da[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                        suminfectV1[i]+=(self.contact[i][j])*(sum(self.PinfIso*self.DiV1[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.DhV1[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.DaV1[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                        suminfectV2[i]+=(self.contact[i][j])*(sum(self.PinfIso*self.DiV2[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.DhV2[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.DaV2[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                    else:
+                        suminfect[i]+=(self.contactQ[i][j])*(sum(self.PinfIso*self.Di[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.Dh[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.Da[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                        suminfectV1[i]+=(self.contactQ[i][j])*(sum(self.PinfIso*self.DiV1[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.DhV1[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.DaV1[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                        suminfectV2[i]+=(self.contactQ[i][j])*(sum(self.PinfIso*self.DiV2[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.HPinfIso*self.DhV2[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d]))+sum(self.AsPinf*self.DaV2[j][self.nPad+d:self.nPad+d-self.nP-1:-1]/(self.TotPop[j]-self.F[j][d])))
+                        
+                totalinfect[i]=suminfect[i]+suminfectV1[i]+suminfectV2[i]
+                if self.S[i][d]<=0:
+                    self.S[i][d]=0
+                if self.SV1[i][d]<=0:
+                    self.SV1[i][d]=0   
+                
+                SumDi[i]= (1-self.Hc[i]-self.Ac)*totalinfect[i]
+                SumDiA[i]= self.Ac*totalinfect[i]
+                SumDiH[i]= self.Hc[i]*totalinfect[i]
+         
+                SumDiV1[i]= self.sigmai1*(1-self.Hc[i]-self.Ac)*totalinfect[i]
+                SumDiAV1[i]=self.sigmaa1*self.Ac*totalinfect[i]
+                SumDiHV1[i]=self.sigmah1*self.Hc[i]*totalinfect[i]
+                
+                SumDiV2[i]= self.sigmai2*(1-self.Hc[i]-self.Ac)*totalinfect[i]
+                SumDiAV2[i]=self.sigmaa2*self.Ac*totalinfect[i]
+                SumDiHV2[i]=self.sigmah2*self.Hc[i]*totalinfect[i]
+                
+                SumRi[i] =sum(self.mildfull*self.Di[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRh[i]=sum(self.fullhosp*self.Dh[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRa[i]=sum(self.asymprec*self.Da[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                
+                SumRiV1[i] =sum(self.mildfull*self.DiV1[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRhV1[i]=sum(self.fullhosp*self.DhV1[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRaV1[i]=sum(self.asymprec*self.DaV1[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                
+                SumRiV2[i] =sum(self.mildfull*self.DiV2[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRhV2[i]=sum(self.fullhosp*self.DhV2[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+                SumRaV2[i]=sum(self.asymprec*self.DaV2[i][self.nPad+d:self.nPad+d-self.nP-1:-1])
+               
+                #New daily infections
+                self.Di[i][self.nPad+d]=self.Rpar[d]*self.S[i][d]*(SumDi[i])
+                self.Dh[i][self.nPad+d]=self.Rpar[d]*self.S[i][d]*(SumDiH[i])
+                self.Da[i][self.nPad+d]=self.Rpar[d]*self.S[i][d]*(SumDiA[i])
+                
+                self.DiV1[i][self.nPad+d]=self.Rpar[d]*self.SV1[i][d]*(SumDiV1[i])
+                self.DhV1[i][self.nPad+d]=self.Rpar[d]*self.SV1[i][d]*(SumDiHV1[i])
+                self.DaV1[i][self.nPad+d]=self.Rpar[d]*self.SV1[i][d]*(SumDiAV1[i])
+                
+                self.DiV2[i][self.nPad+d]=self.Rpar[d]*self.SV2[i][d]*(SumDiV2[i])
+                self.DhV2[i][self.nPad+d]=self.Rpar[d]*self.SV2[i][d]*(SumDiHV2[i])
+                self.DaV2[i][self.nPad+d]=self.Rpar[d]*self.SV2[i][d]*(SumDiAV2[i])
+
+                #New daily fatalities
+                self.Df[i][d]=self.Hf[i]*SumRh[i]+self.Cf[i]*SumRi[i]
+                self.DfV1[i][d]=self.Hf[i]*SumRhV1[i]+self.Cf[i]*SumRiV1[i]*self.sigmah1
+                self.DfV2[i][d]=self.Hf[i]*SumRhV2[i]+self.Cf[i]*SumRiV2[i]*self.sigmah2
+               
+                #New daily recoveries
+                self.Dr[i][d]=SumRi[i]*(1-self.Cf[i])
+                self.DRh[i][d]=(1-self.Hf[i])*SumRh[i]
+                self.DRa[i][d]=SumRa[i]
+               
+                self.DrV1[i][d]=SumRiV1[i]*(1-self.Cf[i])*(1-self.sigmah1)
+                self.DRhV1[i][d]=(1-self.Hf[i])*SumRhV1[i]
+                self.DRaV1[i][d]=SumRaV1[i]
+          
+                self.DrV2[i][d]=SumRiV2[i]*(1-self.Cf[i])*(1-self.sigmah2)
+                self.DRhV2[i][d]=(1-self.Hf[i])*SumRhV2[i]
+                self.DRaV2[i][d]=SumRaV2[i]
+                
+                #Unvaccinated population compartments
+                self.S[i][d+1]=self.S[i][d]-self.Di[i][self.nPad+d]-self.Dh[i][self.nPad+d]-self.Vrate[i]
+                
+                #End conditions for vaccinations once cohort is fully vaccinated
+                if self.S[i][d+1]<0 and (i==self.Vorder[count]):
+                    self.Vrate[i]=self.Vrate[i]+self.S[i][d+1]
+                    self.S[i][d+1]=0
+                    count+=1
+                    self.Vrate[self.Vorder[count]]=-self.S[i][d+1]
+                if self.S[i][d]<=0 :
+                    self.Vrate[self.Vorder[count]]+=self.Vrate[i]
+                    self.Vrate[i]=0
+                    self.S[i][d]=0
+                    self.S[i][d+1]=0
+                    
+                    
+                self.I[i][d+1]=self.Di[i][self.nPad+d]-self.Dr[i][d]+self.I[i][d]
+                self.R[i][d+1]=self.R[i][d]+self.Dr[i][d]+self.DRh[i][d]
+                self.F[i][d+1]=self.F[i][d]+self.Df[i][d]
+                self.H[i][d+1]=self.H[i][d]-self.Df[i][d]+self.Dh[i][self.nPad+d]-self.DRh[i][d]+self.Cf[i]*SumRi[i]
+                self.A[i][d+1]=self.A[i][d]+self.Da[i][self.nPad+d]-self.DRa[i][d]
+
+                #1st dose vaccinated population compartments
+                self.SV1[i][d+1]=self.SV1[i][d]-self.DiV1[i][self.nPad+d]-self.DhV1[i][self.nPad+d]+self.Vrate[i]-self.Vrate2[i]
+                
+                #End conditions for vaccinations once cohort is fully vaccinated
+                if self.SV1[i][d+1]<0 and (i==self.Vorder[count2]):
+                    self.Vrate2[i]=self.Vrate2[i]+self.SV1[i][d+1]
+                    self.SV1[i][d+1]=0
+                    count2+=1
+                    self.Vrate2[self.Vorder[count2]]=-self.SV1[i][d+1]
+                if self.SV1[i][d]<=0:
+                    self.Vrate2[self.Vorder[count2]]+=self.Vrate2[i]
+                    self.Vrate2[i]=0
+                    self.SV1[i][d]=0
+                    self.SV1[i][d+1]=0
+
+                self.IV1[i][d+1]=self.DiV1[i][self.nPad+d]-self.DrV1[i][d]+self.IV1[i][d]
+                self.RV1[i][d+1]=self.RV1[i][d]+self.DrV1[i][d]+self.DRhV1[i][d]
+                self.FV1[i][d+1]=self.FV1[i][d]+self.DfV1[i][d]
+                self.HV1[i][d+1]=self.HV1[i][d]-self.DfV1[i][d]+self.DhV1[i][self.nPad+d]-self.DRhV1[i][d]+self.Cf[i]*SumRiV1[i]
+                self.AV1[i][d+1]=self.AV1[i][d]+self.DaV1[i][self.nPad+d]-self.DRaV1[i][d]
+                
+                #2nd dose vaccinated population compartments
+                self.SV2[i][d+1]=self.SV2[i][d]-self.DiV2[i][self.nPad+d]-self.DhV2[i][self.nPad+d]+self.Vrate2[i]
+                self.IV2[i][d+1]=self.DiV2[i][self.nPad+d]-self.DrV2[i][d]+self.IV2[i][d]
+                self.RV2[i][d+1]=self.RV2[i][d]+self.DrV2[i][d]+self.DRhV2[i][d]
+                self.FV2[i][d+1]=self.FV2[i][d]+self.DfV2[i][d]
+                self.HV2[i][d+1]=self.HV2[i][d]-self.DfV2[i][d]+self.DhV2[i][self.nPad+d]-self.DRhV2[i][d]+self.Cf[i]*SumRiV2[i]
+                self.AV2[i][d+1]=self.AV2[i][d]+self.DaV2[i][self.nPad+d]-self.DRaV2[i][d]
+
+
+  
